@@ -44,7 +44,9 @@ LIMIT 3;
 
     c. **Challenge Question:** Are there any specialties that appear in the prescriber table that have no associated prescriptions in the prescription table?
 
-    d. **Difficult Bonus:** *Do not attempt until you have solved all other problems!* For each specialty, report the percentage of total claims by that specialty which are for opioids. Which specialties have a high percentage of opioids?
+    d. **Difficult Bonus:** *Do not attempt until you have solved all other problems!* 
+	For each specialty, report the percentage of total claims by that specialty which are for opioids. 
+	Which specialties have a high percentage of opioids?
    
 */
 
@@ -78,10 +80,63 @@ LIMIT 3;
 
 -- c
 
-
+SELECT specialty_description
+FROM prescriber
+WHERE specialty_description NOT IN
+	(
+	SELECT specialty_description
+	FROM prescriber
+	INNER JOIN prescription
+	USING (npi)
+	)
 
 -- d
 
+-- Solution I (526 msec)
+WITH specialty_opioids AS (
+	SELECT specialty_description,
+		opioid_drug_flag,
+		SUM(total_claim_count) AS opioid_type_total,
+		SUM(SUM(total_claim_count)) OVER(PARTITION BY specialty_description) AS claims_total
+	FROM prescriber
+	INNER JOIN prescription
+		USING (npi)
+	INNER JOIN drug
+		USING (drug_name)
+	GROUP BY specialty_description, opioid_drug_flag
+	)
+SELECT *, 
+	opioid_type_total*100.0/claims_total AS percent_opioid_claims
+FROM specialty_opioids
+WHERE opioid_drug_flag = 'Y'
+ORDER BY percent_opioid_claims DESC;
+
+-- Solution II (680 msec)
+WITH opioid_scripts AS (
+	SELECT specialty_description,
+		SUM(total_claim_count) AS opioid_claims
+	FROM prescriber
+	INNER JOIN prescription
+		USING (npi)
+	INNER JOIN drug
+		USING (drug_name)
+	WHERE opioid_drug_flag = 'Y'
+	GROUP BY specialty_description
+),
+all_scripts AS (
+	SELECT specialty_description,
+		SUM(total_claim_count) AS total_claims
+	FROM prescriber
+	INNER JOIN prescription
+		USING (npi)
+	GROUP BY specialty_description
+)
+SELECT *, 
+	opioid_claims*100.0/total_claims AS percent_opioid_claims
+FROM opioid_scripts
+INNER JOIN all_scripts
+	USING (specialty_description)
+ORDER BY percent_opioid_claims DESC;
 
 ---------------------------------------------------------------------------------------------- 3
 
@@ -300,7 +355,6 @@ WHERE specialty_description = 'Pain Management'
 	AND opioid_drug_flag = 'Y'
 ORDER BY nppes_provider_last_org_name, nppes_provider_first_name
 	
-
 -- c
 
 SELECT
