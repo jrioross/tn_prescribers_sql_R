@@ -208,3 +208,52 @@ Hint #1: First write a query which will label each drug in the drug table using 
 Hint #2: In order to use the crosstab function, you need to first write a query which will produce a table with one row_name column, one category column, and one value column. So in this case, you need to have a city column, a drug label column, and a total claim count column.
 Hint #3: The sql statement that goes inside of crosstab must be surrounded by single quotes. If the query that you are using also uses single quotes, you'll need to escape them by turning them into double-single quotes.
 */
+
+-- Create Extension
+
+CREATE EXTENSION tablefunc;
+
+-- Version with $$ (cleaner)
+-- Output doesn't perfectly match Michael's
+
+SELECT *
+FROM 
+crosstab(
+	$$SELECT 
+		nppes_provider_city AS city,
+		CASE WHEN drug_name ILIKE '%hydrocodone%' THEN 'hydrocodone' 
+			 WHEN drug_name ILIKE '%oxycodone%' THEN 'oxycodone'
+			 WHEN drug_name ILIKE '%oxymorphone%' THEN 'oxymorphone'
+			 WHEN drug_name ILIKE '%morphine%' THEN 'morphine'
+			 WHEN drug_name ILIKE '%codeine%' THEN 'codeine'
+			 WHEN drug_name ILIKE '%fentanyl%' THEN 'fentanyl' END AS opioid_type,
+		SUM(total_claim_count) AS total_claims
+	FROM prescriber
+	NATURAL JOIN prescription
+	NATURAL JOIN drug
+	WHERE nppes_provider_city IN ('NASHVILLE', 'MEMPHIS', 'KNOXVILLE', 'CHATTANOOGA')
+		AND opioid_drug_flag = 'Y'
+		AND CASE WHEN drug_name ILIKE '%hydrocodone%' THEN 'hydrocodone' 
+				 WHEN drug_name ILIKE '%oxycodone%' THEN 'oxycodone'
+				 WHEN drug_name ILIKE '%oxymorphone%' THEN 'oxymorphone'
+				 WHEN drug_name ILIKE '%morphine%' THEN 'morphine'
+				 WHEN drug_name ILIKE '%codeine%' THEN 'codeine'
+				 WHEN drug_name ILIKE '%fentanyl%' THEN 'fentanyl' END IS NOT NULL
+	GROUP BY nppes_provider_city,
+			CASE WHEN drug_name ILIKE '%hydrocodone%' THEN 'hydrocodone' 
+				 WHEN drug_name ILIKE '%oxycodone%' THEN 'oxycodone'
+				 WHEN drug_name ILIKE '%oxymorphone%' THEN 'oxymorphone'
+				 WHEN drug_name ILIKE '%morphine%' THEN 'morphine'
+				 WHEN drug_name ILIKE '%codeine%' THEN 'codeine'
+				 WHEN drug_name ILIKE '%fentanyl%' THEN 'fentanyl' END
+	ORDER BY city$$,
+	$$SELECT unnest('{codeine, fentanyl, hydrocodone, morphine, oxycodone, oxymorphone}'::text[])$$ -- had to do this to avoid a bunch of nulls
+	) AS ct(city text,
+			codeine numeric, 
+			fentanyl numeric, 
+			hydrocodone numeric, 
+			morphine numeric, 
+			oxycodone numeric,
+			oxymorphone numeric)
+
+
