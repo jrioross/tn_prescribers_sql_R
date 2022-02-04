@@ -80,7 +80,7 @@ LIMIT 3;
 
 -- c
 
-SELECT specialty_description
+SELECT DISTINCT specialty_description
 FROM prescriber
 WHERE specialty_description NOT IN
 	(
@@ -138,6 +138,41 @@ INNER JOIN all_scripts
 	USING (specialty_description)
 ORDER BY percent_opioid_claims DESC;
 
+-- Chris
+
+SELECT 
+	specialty_description, 
+	ROUND(occ_by_specialty / tcc_by_specialty * 1.0, 2) AS opioid_perc
+FROM
+	(
+		SELECT
+			specialty_description,
+			SUM(total_claim_count) AS occ_by_specialty
+		FROM prescription
+		INNER JOIN prescriber
+		USING (npi)
+		WHERE prescription.drug_name IN
+			(
+				SELECT drug.drug_name
+				FROM drug
+				WHERE opioid_drug_flag = 'Y'
+			)
+		GROUP BY specialty_description
+	) AS opioids
+	INNER JOIN
+	(
+		SELECT
+			specialty_description,
+			SUM(total_claim_count) AS tcc_by_specialty
+		FROM prescription
+		INNER JOIN prescriber
+		USING (npi)
+		GROUP BY specialty_description
+	) AS non_opioids
+USING (specialty_description)
+ORDER BY opioid_perc DESC;
+
+
 ---------------------------------------------------------------------------------------------- 3
 
 /*
@@ -152,24 +187,25 @@ ORDER BY percent_opioid_claims DESC;
 
 -- a
 
-SELECT generic_name, total_drug_cost
+SELECT generic_name, 
+	SUM(total_drug_cost)::money AS total_total_drug_cost
 FROM drug
 NATURAL JOIN prescription
-ORDER BY total_drug_cost DESC;
+GROUP BY generic_name
+ORDER BY total_total_drug_cost DESC;
 
--- PIRFENIDONE at $2,829,174.30 !!!
+-- Corrected: INSULIN GLARGINE,HUM.REC.ANLOG at $104,264,066.35 !!!
 
 -- b
 
 SELECT generic_name, 
-	total_drug_cost, 
-	total_day_supply,
-	ROUND(total_drug_cost/total_day_supply, 2)::money AS cost_per_day
+	ROUND(SUM(total_drug_cost)/SUM(total_day_supply), 2)::money AS cost_per_day
 FROM drug
 NATURAL JOIN prescription
+GROUP BY generic_name
 ORDER BY cost_per_day DESC;
 
--- IMMUN GLOB G(IGG)/GLY/IGA OV50 at $7,141.11 per day
+--  Corrected: C1 ESTERASE INHIBITOR at $3,495.22 per day
 
 ---------------------------------------------------------------------------------------------- 4
 
@@ -220,7 +256,9 @@ ORDER BY total_spent DESC;
 5. a. How many CBSAs are in Tennessee? 
    **Warning:** The cbsa table contains information for all states, not just Tennessee.
 
-    b. Which cbsa has the largest combined population? Which has the smallest? Report the CBSA name and total population.
+    b. Which cbsa has the largest combined population? 
+	Which has the smallest? 
+	Report the CBSA name and total population.
 
     c. What is the largest (in terms of population) county which is not included in a CBSA? Report the county name and population.
 	
@@ -281,7 +319,7 @@ LIMIT 3;
 
 -- a
 
-SELECT drug_name, total_claim_count
+SELECT DISTINCT drug_name, total_claim_count
 FROM prescription
 INNER JOIN drug
 	USING (drug_name)
