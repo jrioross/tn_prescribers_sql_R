@@ -218,7 +218,7 @@ CREATE EXTENSION tablefunc;
 
 SELECT *
 FROM 
-crosstab(
+CROSSTAB(
 	$$SELECT 
 		nppes_provider_city AS city,
 		CASE WHEN drug_name ILIKE '%hydrocodone%' THEN 'hydrocodone' 
@@ -246,8 +246,7 @@ crosstab(
 				 WHEN drug_name ILIKE '%morphine%' THEN 'morphine'
 				 WHEN drug_name ILIKE '%codeine%' THEN 'codeine'
 				 WHEN drug_name ILIKE '%fentanyl%' THEN 'fentanyl' END
-	ORDER BY city$$,
-	$$SELECT unnest('{codeine, fentanyl, hydrocodone, morphine, oxycodone, oxymorphone}'::text[])$$ -- had to do this to avoid a bunch of nulls
+	ORDER BY city, opioid_type$$
 	) AS ct(city text,
 			codeine numeric, 
 			fentanyl numeric, 
