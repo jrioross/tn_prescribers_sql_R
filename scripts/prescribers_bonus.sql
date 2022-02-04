@@ -232,13 +232,6 @@ CROSSTAB(
 	NATURAL JOIN prescription
 	NATURAL JOIN drug
 	WHERE nppes_provider_city IN ('NASHVILLE', 'MEMPHIS', 'KNOXVILLE', 'CHATTANOOGA')
-		AND opioid_drug_flag = 'Y'
-		AND CASE WHEN drug_name ILIKE '%hydrocodone%' THEN 'hydrocodone' 
-				 WHEN drug_name ILIKE '%oxycodone%' THEN 'oxycodone'
-				 WHEN drug_name ILIKE '%oxymorphone%' THEN 'oxymorphone'
-				 WHEN drug_name ILIKE '%morphine%' THEN 'morphine'
-				 WHEN drug_name ILIKE '%codeine%' THEN 'codeine'
-				 WHEN drug_name ILIKE '%fentanyl%' THEN 'fentanyl' END IS NOT NULL
 	GROUP BY nppes_provider_city,
 			CASE WHEN drug_name ILIKE '%hydrocodone%' THEN 'hydrocodone' 
 				 WHEN drug_name ILIKE '%oxycodone%' THEN 'oxycodone'
@@ -255,4 +248,39 @@ CROSSTAB(
 			oxycodone numeric,
 			oxymorphone numeric)
 
+-- Cleaned up for readability, replaced drug_name with generic_name
 
+SELECT *
+FROM 
+CROSSTAB(
+	$$WITH city_special_ops AS (
+		SELECT 
+			nppes_provider_city AS city,
+			CASE WHEN generic_name ILIKE '%hydrocodone%' THEN 'hydrocodone' 
+				 WHEN generic_name ILIKE '%oxycodone%' THEN 'oxycodone'
+				 WHEN generic_name ILIKE '%oxymorphone%' THEN 'oxymorphone'
+				 WHEN generic_name ILIKE '%morphine%' THEN 'morphine'
+				 WHEN generic_name ILIKE '%codeine%' THEN 'codeine'
+				 WHEN generic_name ILIKE '%fentanyl%' THEN 'fentanyl' END AS opioid_type,
+			total_claim_count
+		FROM prescriber
+		NATURAL JOIN prescription
+		NATURAL JOIN drug
+		WHERE nppes_provider_city IN ('NASHVILLE', 'MEMPHIS', 'KNOXVILLE', 'CHATTANOOGA')
+
+	)
+	SELECT 
+		city,
+		opioid_type,
+		SUM(total_claim_count) AS total_claims
+	FROM city_special_ops
+	WHERE opioid_type IS NOT NULL
+	GROUP BY city, opioid_type
+	ORDER BY city, opioid_type$$
+	) AS ct(city text,
+			codeine numeric, 
+			fentanyl numeric, 
+			hydrocodone numeric, 
+			morphine numeric, 
+			oxycodone numeric,
+			oxymorphone numeric);
