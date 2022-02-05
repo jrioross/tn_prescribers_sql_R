@@ -1,0 +1,238 @@
+---
+title: "prescribers_R__open_exploration"
+output: html_document
+---
+
+# Prologue: Tennessee's Opioid Crisis
+
+Opioids are a class of drugs including prescription pain relievers such as oxycodone and hydrocodone, the synthetic opioid fentanyl, and the illegal drug heroin. These drugs produce euphoria in addition to pain relief, which can lead to dependence, addiction, overdose, and death.
+
+In the late 1990s, opioids began to be prescribed at high rates, which led to widespread misuse and ultimately created a serious national health crisis. In 2019, more than 130 people per day died from opioid-related drug overdoses in the United States. Tennessee has been one of the hardest-hit states in the opioid epidemic, with more than 1300 overdose deaths in 2018.
+
+In this project, you will be working with a database created from the 2017 Medicare Part D Prescriber Public Use File, available at https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Provider-Charge-Data/PartD2017.
+
+## Imports
+
+```{r}
+library(DBI)
+library(RPostgres)
+library(tidyverse)
+library(plotly)
+library(ggbeeswarm)
+```
+
+## Connect to prescribers database
+
+```{r}
+con <- dbConnect(Postgres(),                 # Use the postgres driver
+                 dbname = 'prescribers',     # Name of the database we want to connect to
+                 host = 'localhost',         # 'localhost' or eg. 'ec2-54-83-201-96.compute-1.amazonaws.com'
+                 port = 5432, 
+                 user = 'postgres',
+                 password = rstudioapi::askForPassword("Database password"))
+```
+
+## Check for tables
+
+```{r}
+dbListTables(con)
+```
+
+## Check fields of prescriber table
+
+```{r}
+dbListFields(con, "prescriber")
+```
+
+Now that the connection seems well established, let's get into the assignment.
+
+# Assignment
+
+Your objectives are to use the database provided to attempt to answer the following questions:
+* Which Tennessee counties had a disproportionately high number of opioid prescriptions?
+* Who are the top opioid prescribers for the state of Tennessee?
+* What did the trend in overdose deaths due to opioids look like in Tennessee from 2015 to 2018?
+* Is there an association between rates of opioid prescriptions and overdose deaths by county?
+* Is there any association between a particular type of opioid and number of overdose deaths?
+
+Note that some zip codes will be associated with multiple fipscounty values in the zip_fips table. To resolve this, use the fipscounty with the highest tot_ratio for each zipcode.
+
+## Which Tennessee counties had a disproportionately high number of opioid prescriptions?
+
+### Write query, get results, fetch results to get tibble, and clear results
+
+```{r}
+query = "
+
+WITH ops_by_zip AS (
+	SELECT
+		nppes_provider_zip5 AS zip,
+		SUM(total_claim_count) AS zip_op_scripts
+	FROM prescriber
+	INNER JOIN prescription
+		USING (npi)
+	INNER JOIN drug
+		USING (drug_name)
+	WHERE opioid_drug_flag = 'Y'
+	GROUP BY nppes_provider_zip5
+	),
+zip_fips_maxed AS (
+	SELECT *, MAX(tot_ratio) OVER(PARTITION BY zip) AS max_tot_ratio
+	FROM zip_fips
+	),
+zf AS (
+	SELECT zip, fipscounty, county, tot_ratio, max_tot_ratio
+	FROM zip_fips_maxed
+	INNER JOIN fips_county
+		USING (fipscounty)
+	WHERE tot_ratio = max_tot_ratio
+	AND state = 'TN'
+	)
+SELECT county, population, SUM(zip_op_scripts) AS op_scripts
+FROM ops_by_zip
+INNER JOIN zf
+	USING (zip)
+INNER JOIN population
+	USING (fipscounty)
+GROUP BY county, population
+ORDER BY op_scripts DESC
+
+"
+
+res <- dbSendQuery(con, query)
+
+ops_by_county <- dbFetch(res)
+
+dbClearResult(res)
+```
+
+### Analyze opioid prescriptions by county (ops_by_county)
+
+Let's get a quick view of which counties have an above-average number of opioid scripts by mean and median
+
+```{r}
+# Above mean
+ops_by_county %>%
+  mutate(mean_op_scripts = mean(op_scripts), 
+         median_op_scripts = median(op_scripts)) %>%
+  filter(op_scripts > mean_op_scripts)
+```
+
+```{r}
+# Above median
+ops_by_county %>%
+  mutate(mean_op_scripts = mean(op_scripts), 
+         median_op_scripts = median(op_scripts)) %>%
+  filter(op_scripts > median_op_scripts)
+```
+
+
+Let's visualize with a box plot to find some outliers
+
+```{r}
+p <- ops_by_county %>%
+  ggplot(aes(x = 1, 
+             y = op_scripts, 
+             text = sprintf('County: %s<br>Opioid Scripts: %s', county, op_scripts))) +
+    geom_boxplot() +
+    geom_beeswarm(aes(color = population)) 
+
+ggplotly(p)
+```
+
+There are nine outlier counties, ranging from Rutherford to Knox. From the color scale, we can see that high-population counties like Davidson and Shelby also have high amounts of opioid prescriptions; however, several of the outlier counties have lower populations. In order to investigate this further, let's focus on opioid prescriptions per capita instead of overall opioid prescriptions.
+
+```{r}
+ops_by_county %>% 
+  mutate(ops_per_pop = op_scripts / population) %>%
+  arrange(desc(ops_per_pop))
+```
+
+Our top counties look very different from the previous tibble, so let's plot these, too.
+
+```{r}
+p <- ops_by_county %>% 
+  mutate(ops_per_pop = op_scripts / population) %>%
+  arrange(desc(ops_per_pop)) %>%
+  ggplot(aes(x = 1, 
+           y = ops_per_pop, 
+           text = sprintf('County: %s<br>Opioid Scripts: %s', county, ops_per_pop))) +
+  geom_boxplot() +
+  geom_beeswarm(aes(color = population)) 
+
+ggplotly(p)
+```
+
+This distribution looks very different from the last one. We now have two outlier counties: Scott and Clay. Scott County is especially egregious. It is the only county averaging more than one opioid prescription per person.
+
+
+## Who are the top opioid prescribers for the state of Tennessee?
+
+
+```{r}
+query = "
+
+WITH ops_by_npi AS (
+	SELECT
+	  npi,
+	  nppes_provider_first_name AS first_name,
+	  nppes_provider_last_org_name AS last_name,
+	  specialty_description AS specialty,
+	  nppes_provider_zip5 AS zip,
+	  SUM(total_claim_count) AS prescriber_op_scripts
+	FROM prescriber
+	INNER JOIN prescription
+		USING (npi)
+	INNER JOIN drug
+		USING (drug_name)
+	WHERE opioid_drug_flag = 'Y'
+	GROUP BY npi,
+	  nppes_provider_first_name,
+	  nppes_provider_last_org_name,
+	  specialty_description,
+		nppes_provider_zip5
+	),
+zip_fips_maxed AS (
+	SELECT *, MAX(tot_ratio) OVER(PARTITION BY zip) AS max_tot_ratio
+	FROM zip_fips
+	),
+zf AS (
+	SELECT zip, fipscounty, county, tot_ratio, max_tot_ratio
+	FROM zip_fips_maxed
+	INNER JOIN fips_county
+		USING (fipscounty)
+	WHERE tot_ratio = max_tot_ratio
+	AND state = 'TN'
+	)
+SELECT first_name,
+	last_name,
+	specialty,
+	county,
+	population, 
+	prescriber_op_scripts
+FROM ops_by_npi
+INNER JOIN zf
+	USING (zip)
+INNER JOIN population
+	USING (fipscounty)
+ORDER BY last_name, first_name DESC;
+
+"
+
+res <- dbSendQuery(con, query)
+
+ops_by_prescriber <- dbFetch(res)
+
+dbClearResult(res)
+```
+
+
+```{r}
+ops_by_prescriber %>%
+    arrange(desc(prescriber_op_scripts))
+```
+
+Great Scott!
+
+https://www.wvlt.tv/content/news/Nearly-5M-pills-Oneida-doctor-whose-clinic-burned-accused-of-running-pill-mill-567424921.html
+

@@ -276,13 +276,21 @@ WHERE state = 'TN';
 
 -- b
 
-SELECT cbsaname, SUM(population) AS total_pop
+(SELECT cbsaname, SUM(population) AS total_pop, 'largest' AS largest_smallest
 FROM cbsa
 INNER JOIN population
 	USING (fipscounty)
 GROUP BY cbsaname
 ORDER BY total_pop DESC
-LIMIT 5;
+LIMIT 1)
+UNION
+(SELECT cbsaname, SUM(population) AS total_pop, 'smallest' AS largest_smallest
+FROM cbsa
+INNER JOIN population
+	USING (fipscounty)
+GROUP BY cbsaname
+ORDER BY total_pop
+LIMIT 1)
 
 -- Nashville-Davidson--Murfreesboro--Franklin, TN has a total population of 1,830,410
 
