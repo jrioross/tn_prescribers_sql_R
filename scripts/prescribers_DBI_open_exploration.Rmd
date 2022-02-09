@@ -236,3 +236,89 @@ Great Scott!
 
 https://www.wvlt.tv/content/news/Nearly-5M-pills-Oneida-doctor-whose-clinic-burned-accused-of-running-pill-mill-567424921.html
 
+```{r}
+ops_by_prescriber %>%
+    mutate(ops_per_pop = prescriber_op_scripts/population) %>% 
+    arrange(desc(ops_per_pop))
+```
+
+Let's view this list as a boxplot:
+
+```{r}
+p <- ops_by_prescriber %>%
+    mutate(ops_per_pop = prescriber_op_scripts/population) %>% 
+    arrange(desc(ops_per_pop)) %>%
+    ggplot(aes(x = 0,
+               y = ops_per_pop,
+               text = sprintf('County: %s<br>Opioid Scripts: %s', county, ops_per_pop))) +
+      geom_boxplot() +
+      geom_beeswarm(aes(color = population))
+
+ggplotly(p, tooltip = 'text')
+```
+
+
+## What did the trend in overdose deaths due to opioids look like in Tennessee from 2015 to 2018?
+
+```{r}
+query = "
+
+SELECT year, county, population, overdose_deaths
+FROM overdose_deaths
+INNER JOIN fips_county
+USING (fipscounty)
+INNER JOIN population
+USING (fipscounty)
+WHERE state = 'TN'
+
+"
+
+res <- dbSendQuery(con, query)
+
+od_by_year <- dbFetch(res)
+
+dbClearResult(res)
+```
+
+
+First, let's investigate the od_by_year result and then add on an overdoses per capita column.
+
+```{r}
+od_by_year %>% 
+  mutate(od_per_capita = overdose_deaths/population) %>% 
+  arrange(desc(year), desc(overdose_deaths))
+```
+
+```{r}
+p <- od_by_year %>% 
+  mutate(od_per_capita = overdose_deaths/population) %>% 
+  group_by(year) %>%
+  summarize(total_od = sum(overdose_deaths)) %>%
+  ggplot(aes(x = year, 
+             y = total_od)) +
+    geom_point(aes(text = sprintf('Year: %s<br>Overdose Deaths: %s', year, total_od))) +
+    geom_line() +
+    ylim(0,1400) +
+    labs(title = 'Total Overdose Deaths in Tennessee by Year, 2015-2018',
+         x = 'Year',
+         y = 'Total Overdoses'
+         )
+
+ggplotly(p, tooltip = 'text')
+```
+
+Overdose deaths are increasing each year from 2015-2018; however, the rate of increase is flattening. Likely, the overdose rate is not proportionally keeping up with the increase in population in TN overall.
+
+## Is there an association between rates of opioid prescriptions and overdose deaths by county?
+
+```{r}
+
+```
+
+
+## Is there any association between a particular type of opioid and number of overdose deaths?
+
+```{r}
+
+```
+

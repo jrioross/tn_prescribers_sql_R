@@ -276,7 +276,8 @@ CROSSTAB(
 	FROM city_special_ops
 	WHERE opioid_type IS NOT NULL
 	GROUP BY city, opioid_type
-	ORDER BY city, opioid_type$$
+	ORDER BY city, opioid_type
+	$$
 	) AS ct(city text,
 			codeine numeric, 
 			fentanyl numeric, 

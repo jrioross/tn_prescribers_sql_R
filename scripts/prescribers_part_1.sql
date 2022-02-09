@@ -327,7 +327,7 @@ LIMIT 3;
 
 -- a
 
-SELECT DISTINCT drug_name, total_claim_count
+SELECT drug_name, total_claim_count
 FROM prescription
 INNER JOIN drug
 	USING (drug_name)
@@ -353,7 +353,8 @@ INNER JOIN drug
 	USING (drug_name)
 LEFT JOIN prescriber
 	USING(npi)
-WHERE total_claim_count >= 3000;
+WHERE total_claim_count >= 3000
+ORDER BY total_claim_count DESC;
 
 -- David and Bruce, man
 
